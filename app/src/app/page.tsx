@@ -1,9 +1,9 @@
 import { TruckShowroom } from "@/components/truck-showroom";
 
 const checkpoints = [
-  "GLB truck model loaded from the existing asset in the app folder",
-  "Orbit controls for rotate, zoom, and pan",
-  "Ground plane, contact shadows, and environment lighting",
+  "Highbeam toggle implemented with frontend state",
+  "Truck-mounted spotlights respond immediately to the control",
+  "Scene keeps full orbit, grounding, and environment lighting from MVP1",
 ];
 
 export default function Home() {
@@ -14,19 +14,20 @@ export default function Home() {
         <section className="relative z-10 flex flex-col justify-between gap-8 rounded-[2rem] border border-black/5 bg-white/55 p-7 shadow-panel backdrop-blur md:p-9">
           <div className="space-y-6">
             <span className="inline-flex w-fit rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.28em] text-accent">
-              MVP1 Static Visualization
+              MVP2 Interactive Highbeams
             </span>
             <div className="space-y-4">
               <p className="font-serif text-4xl leading-none md:text-5xl">
                 Long-haul truck,
                 <br />
-                staged for full
+                now wired for
                 <br />
-                visual review.
+                live beam control.
               </p>
               <p className="max-w-md text-sm leading-7 text-ink/72 md:text-base">
-                This milestone focuses on a clean rendering foundation: load the truck,
-                make it feel anchored in space, and let the user inspect it from every angle.
+                This stage adds local-state lighting behavior so the truck can switch
+                its highbeams on and off instantly while keeping the same interactive 3D
+                inspection experience.
               </p>
             </div>
           </div>
@@ -50,4 +51,3 @@ export default function Home() {
     </main>
   );
 }
-
