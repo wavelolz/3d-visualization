@@ -42,7 +42,7 @@ type NamedNode = {
   position: THREE.Vector3;
 };
 
-const REAR_LIGHT_Y_OFFSET = -0.1;
+const REAR_LIGHT_Y_OFFSET = 0;
 const REAR_LIGHT_X_OFFSET = -0.07;
 
 const HIGHBEAM_CONFIG: BeamRigConfig = {
