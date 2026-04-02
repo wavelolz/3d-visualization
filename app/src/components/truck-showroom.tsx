@@ -1,9 +1,14 @@
 "use client";
 
-import { Suspense, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { ContactShadows, Environment, Html, OrbitControls, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+import {
+  DEFAULT_VEHICLE_CONTROL_STATE,
+  type TurnDirection,
+  type VehicleControlState,
+} from "@/lib/vehicle-control";
 
 type BeamPoint = {
   anchor: [number, number, number];
@@ -36,8 +41,6 @@ type NamedNode = {
   name: string;
   position: THREE.Vector3;
 };
-
-type TurnDirection = "left" | "right" | null;
 
 const REAR_LIGHT_Y_OFFSET = -0.2;
 const REAR_LIGHT_X_OFFSET = -0.07;
@@ -468,49 +471,86 @@ function Loader() {
 }
 
 export function TruckShowroom() {
-  const [brakeOn, setBrakeOn] = useState(false);
-  const [highbeamOn, setHighbeamOn] = useState(false);
-  const [lowbeamOn, setLowbeamOn] = useState(false);
-  const [turnDirection, setTurnDirection] = useState<TurnDirection>(null);
+  const [controls, setControls] = useState<VehicleControlState>(
+    DEFAULT_VEHICLE_CONTROL_STATE,
+  );
+  const [requestError, setRequestError] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(true);
 
-  function toggleLowbeam() {
-    setLowbeamOn((current) => {
-      const next = !current;
-      if (next) {
-        setHighbeamOn(false);
-      }
-      return next;
-    });
-  }
+  useEffect(() => {
+    let cancelled = false;
 
-  function toggleHighbeam() {
-    setHighbeamOn((current) => {
-      const next = !current;
-      if (next) {
-        setLowbeamOn(false);
-      }
-      return next;
-    });
-  }
+    async function syncControls() {
+      try {
+        const response = await fetch("/api/state", {
+          cache: "no-store",
+        });
 
-  function toggleBrake() {
-    setBrakeOn((current) => {
-      const next = !current;
-      if (next) {
-        setTurnDirection(null);
-      }
-      return next;
-    });
-  }
+        if (!response.ok) {
+          throw new Error("Failed to load control state.");
+        }
 
-  function toggleTurn(direction: Exclude<TurnDirection, null>) {
-    setTurnDirection((current) => {
-      const next = current === direction ? null : direction;
-      if (next) {
-        setBrakeOn(false);
+        const nextState = (await response.json()) as VehicleControlState;
+        if (cancelled) {
+          return;
+        }
+
+        startTransition(() => {
+          setControls(nextState);
+          setRequestError(null);
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setRequestError(
+          error instanceof Error ? error.message : "Failed to sync controls.",
+        );
+      } finally {
+        if (!cancelled) {
+          setSyncing(false);
+        }
       }
-      return next;
-    });
+    }
+
+    syncControls();
+    const intervalId = window.setInterval(syncControls, 400);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  async function sendControlUpdate(
+    path: string,
+    payload: { direction?: TurnDirection; on?: boolean },
+  ) {
+    setRequestError(null);
+
+    try {
+      const response = await fetch(path, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to update control state.");
+      }
+
+      const nextState = (await response.json()) as VehicleControlState;
+      startTransition(() => {
+        setControls(nextState);
+      });
+    } catch (error) {
+      setRequestError(
+        error instanceof Error ? error.message : "Failed to update controls.",
+      );
+    }
   }
 
   return (
@@ -545,10 +585,10 @@ export function TruckShowroom() {
         <Suspense fallback={<Loader />}>
           <Environment preset="city" />
           <TruckModel
-            brakeOn={brakeOn}
-            highbeamOn={highbeamOn}
-            lowbeamOn={lowbeamOn}
-            turnDirection={turnDirection}
+            brakeOn={controls.brakeOn}
+            highbeamOn={controls.highbeamOn}
+            lowbeamOn={controls.lowbeamOn}
+            turnDirection={controls.turnDirection}
           />
           <ContactShadows
             position={[0, 0.01, 0]}
@@ -584,67 +624,80 @@ export function TruckShowroom() {
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
-            onClick={toggleBrake}
+            onClick={() => sendControlUpdate("/api/controls/brake", { on: !controls.brakeOn })}
             className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              brakeOn
+              controls.brakeOn
                 ? "bg-[#ff4e46] text-white shadow-[0_10px_24px_rgba(255,78,70,0.3)]"
                 : "bg-white/14 text-white"
             }`}
           >
-            Brake {brakeOn ? "On" : "Off"}
+            Brake {controls.brakeOn ? "On" : "Off"}
           </button>
           <button
             type="button"
-            onClick={() => toggleTurn("left")}
+            onClick={() =>
+              sendControlUpdate("/api/controls/turn", {
+                direction: controls.turnDirection === "left" ? null : "left",
+              })
+            }
             className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              turnDirection === "left"
+              controls.turnDirection === "left"
                 ? "bg-[#ffb000] text-[#111726] shadow-[0_10px_24px_rgba(255,176,0,0.26)]"
                 : "bg-white/14 text-white"
             }`}
           >
-            Turn Left {turnDirection === "left" ? "On" : "Off"}
+            Turn Left {controls.turnDirection === "left" ? "On" : "Off"}
           </button>
           <button
             type="button"
-            onClick={() => toggleTurn("right")}
+            onClick={() =>
+              sendControlUpdate("/api/controls/turn", {
+                direction: controls.turnDirection === "right" ? null : "right",
+              })
+            }
             className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              turnDirection === "right"
+              controls.turnDirection === "right"
                 ? "bg-[#ffb000] text-[#111726] shadow-[0_10px_24px_rgba(255,176,0,0.26)]"
                 : "bg-white/14 text-white"
             }`}
           >
-            Turn Right {turnDirection === "right" ? "On" : "Off"}
+            Turn Right {controls.turnDirection === "right" ? "On" : "Off"}
           </button>
           <button
             type="button"
-            onClick={toggleLowbeam}
+            onClick={() =>
+              sendControlUpdate("/api/controls/lowbeam", { on: !controls.lowbeamOn })
+            }
             className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              lowbeamOn
+              controls.lowbeamOn
                 ? "bg-[#d9b85d] text-[#111726] shadow-[0_10px_24px_rgba(217,184,93,0.26)]"
                 : "bg-white/14 text-white"
             }`}
           >
-            Lowbeam {lowbeamOn ? "On" : "Off"}
+            Lowbeam {controls.lowbeamOn ? "On" : "Off"}
           </button>
           <button
             type="button"
-            onClick={toggleHighbeam}
+            onClick={() =>
+              sendControlUpdate("/api/controls/highbeam", { on: !controls.highbeamOn })
+            }
             className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-              highbeamOn
+              controls.highbeamOn
                 ? "bg-accent text-white shadow-[0_10px_24px_rgba(191,93,45,0.32)]"
                 : "bg-white/14 text-white"
             }`}
           >
-            Highbeam {highbeamOn ? "On" : "Off"}
+            Highbeam {controls.highbeamOn ? "On" : "Off"}
           </button>
         </div>
-        <p className="max-w-[14rem] text-xs leading-5 text-white/72">
-          Compare headlights up front, then test rear brake lights and blinking turn signals.
-        </p>
+        <div className="max-w-[15rem] text-xs leading-5 text-white/72">
+          <p>Controls now post to the API and the scene stays in sync by polling shared state.</p>
+          <p>{syncing ? "Syncing control state..." : requestError ?? "API control link is active."}</p>
+        </div>
       </div>
 
       <div className="scene-caption">
-        Rotate, pan, zoom, and inspect both front and rear lighting behavior.
+        Rotate, pan, zoom, and inspect API-driven front and rear lighting behavior.
       </div>
     </div>
   );

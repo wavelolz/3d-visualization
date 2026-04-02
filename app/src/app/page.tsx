@@ -1,9 +1,9 @@
 import { TruckShowroom } from "@/components/truck-showroom";
 
 const checkpoints = [
-  "Brake light toggle implemented with shared rear anchors",
-  "Left and right turn signals blink from the same rear light sources",
-  "Front and rear lighting controls now work together in one inspection scene",
+  "Lighting controls now update shared backend state through REST endpoints",
+  "Frontend polls API state so refreshes and multiple viewers stay in sync",
+  "Truck rendering remains the same while control logic moves out of local UI state",
 ];
 
 export default function Home() {
@@ -14,7 +14,7 @@ export default function Home() {
         <section className="relative z-10 flex flex-col justify-between gap-8 rounded-[2rem] border border-black/5 bg-white/55 p-7 shadow-panel backdrop-blur md:p-9">
           <div className="space-y-6">
             <span className="inline-flex w-fit rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.28em] text-accent">
-              MVP4 Rear Light Controls
+              MVP5 API-Driven Controls
             </span>
             <div className="space-y-4">
               <p className="font-serif text-4xl leading-none md:text-5xl">
@@ -22,12 +22,12 @@ export default function Home() {
                 <br />
                 now wired for
                 <br />
-                full light signals.
+                shared control state.
               </p>
               <p className="max-w-md text-sm leading-7 text-ink/72 md:text-base">
-                This stage expands the interactive lighting system with brake lights
-                and turn signals while keeping the existing lowbeam and highbeam
-                controls available in the same 3D inspection experience.
+                This stage moves the lighting system out of local React state and into
+                an API-driven control loop, so the UI triggers backend updates and the
+                scene stays synced by polling shared state.
               </p>
             </div>
           </div>
