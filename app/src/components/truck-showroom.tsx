@@ -43,7 +43,7 @@ type NamedNode = {
 };
 
 const REAR_LIGHT_Y_OFFSET = 0;
-const REAR_LIGHT_X_OFFSET = -0.07;
+const REAR_LIGHT_X_OFFSET = 0;
 
 const HIGHBEAM_CONFIG: BeamRigConfig = {
   anchorPrefix: "highbeam_anchor_",
