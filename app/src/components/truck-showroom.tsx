@@ -11,6 +11,11 @@ type BeamPoint = {
   target: [number, number, number];
 };
 
+type RearLightPoint = {
+  name: string;
+  position: [number, number, number];
+};
+
 type BeamRigConfig = {
   anchorPrefix: string;
   targetPrefix: string;
@@ -31,6 +36,11 @@ type NamedNode = {
   name: string;
   position: THREE.Vector3;
 };
+
+type TurnDirection = "left" | "right" | null;
+
+const REAR_LIGHT_Y_OFFSET = -0.2;
+const REAR_LIGHT_X_OFFSET = -0.07;
 
 const HIGHBEAM_CONFIG: BeamRigConfig = {
   anchorPrefix: "highbeam_anchor_",
@@ -128,6 +138,38 @@ function extractBeamPoints(
       name: "fallback-right",
       target: [targetX, targetHeight, -spread * spreadBias] as [number, number, number],
     },
+  ];
+}
+
+function extractRearLightPoints(model: THREE.Object3D): RearLightPoint[] {
+  const lights = new Map<string, NamedNode>();
+
+  model.updateMatrixWorld(true);
+  model.traverse((child) => {
+    const lightMatch = child.name.match(/^breaklight_(.+)$/i);
+
+    if (!lightMatch) {
+      return;
+    }
+
+    lights.set(lightMatch[1].toLowerCase(), {
+      name: lightMatch[1],
+      position: child.getWorldPosition(new THREE.Vector3()),
+    });
+  });
+
+  if (lights.size > 0) {
+    return [...lights.values()]
+      .sort((left, right) => left.name.localeCompare(right.name))
+      .map((light) => ({
+        name: light.name,
+        position: [light.position.x, light.position.y, light.position.z],
+      }));
+  }
+
+  return [
+    { name: "L", position: [-0.95, 0.08, -0.14] },
+    { name: "R", position: [-0.95, 0.08, 0.14] },
   ];
 }
 
@@ -252,12 +294,80 @@ function BeamLight({
   );
 }
 
+function RearLight({
+  mode,
+  model,
+  point,
+}: {
+  mode: "brake" | "turn" | "off";
+  model: THREE.Object3D;
+  point: RearLightPoint;
+}) {
+  const lightRef = useRef<THREE.PointLight>(null);
+  const glowRef = useRef<THREE.Mesh>(null);
+
+  useFrame(({ clock }) => {
+    if (!lightRef.current || !glowRef.current) {
+      return;
+    }
+
+    const anchorNode = model.getObjectByName(`breaklight_${point.name}`);
+    const lightPosition = new THREE.Vector3();
+
+    model.updateWorldMatrix(true, true);
+
+    if (anchorNode) {
+      anchorNode.getWorldPosition(lightPosition);
+    } else {
+      lightPosition.set(...point.position);
+      model.localToWorld(lightPosition);
+    }
+
+    lightPosition.x += REAR_LIGHT_X_OFFSET;
+    lightPosition.y += REAR_LIGHT_Y_OFFSET;
+
+    glowRef.current.position.copy(lightPosition);
+    lightRef.current.position.copy(lightPosition);
+
+    const blinkVisible = Math.sin(clock.elapsedTime * Math.PI * 4) > 0;
+    const visible = mode === "brake" || (mode === "turn" && blinkVisible);
+    const color = mode === "brake" ? "#ff3b30" : "#ffb000";
+
+    lightRef.current.color.set(color);
+    lightRef.current.distance = visible ? 1.7 : 0;
+    lightRef.current.intensity = visible ? (mode === "brake" ? 8 : 7) : 0;
+
+    const material = glowRef.current.material;
+    if (material instanceof THREE.MeshBasicMaterial) {
+      material.color.set(color);
+      material.opacity = visible ? 0.95 : 0.14;
+    }
+
+    const pulse = visible ? 0.82 + Math.sin(clock.elapsedTime * 8) * 0.06 : 0.35;
+    glowRef.current.scale.setScalar(pulse);
+  });
+
+  return (
+    <>
+      <pointLight ref={lightRef} color="#ff3b30" decay={2} distance={0} intensity={0} />
+      <mesh ref={glowRef}>
+        <sphereGeometry args={[0.034, 18, 18]} />
+        <meshBasicMaterial color="#ff3b30" opacity={0.14} transparent />
+      </mesh>
+    </>
+  );
+}
+
 function TruckModel({
+  brakeOn,
   highbeamOn,
   lowbeamOn,
+  turnDirection,
 }: {
+  brakeOn: boolean;
   highbeamOn: boolean;
   lowbeamOn: boolean;
+  turnDirection: TurnDirection;
 }) {
   const { scene } = useGLTF("/truck-model");
   const wrapperRef = useRef<THREE.Group>(null);
@@ -271,6 +381,7 @@ function TruckModel({
     const box = new THREE.Box3().setFromObject(model);
     return extractBeamPoints(model, box, LOWBEAM_CONFIG);
   }, [model]);
+  const rearLightPoints = useMemo(() => extractRearLightPoints(model), [model]);
 
   useLayoutEffect(() => {
     if (!wrapperRef.current) {
@@ -321,6 +432,29 @@ function TruckModel({
           target={beam.target}
         />
       ))}
+      {rearLightPoints.map((point) => {
+        const normalizedName = point.name.toLowerCase();
+        const turnActive =
+          turnDirection === "left"
+            ? normalizedName.includes("l")
+            : turnDirection === "right"
+              ? normalizedName.includes("r")
+              : false;
+        const mode: "brake" | "turn" | "off" = brakeOn
+          ? "brake"
+          : turnActive
+            ? "turn"
+            : "off";
+
+        return (
+          <RearLight
+            key={`rear-${point.name}`}
+            mode={mode}
+            model={model}
+            point={point}
+          />
+        );
+      })}
     </>
   );
 }
@@ -334,8 +468,10 @@ function Loader() {
 }
 
 export function TruckShowroom() {
+  const [brakeOn, setBrakeOn] = useState(false);
   const [highbeamOn, setHighbeamOn] = useState(false);
   const [lowbeamOn, setLowbeamOn] = useState(false);
+  const [turnDirection, setTurnDirection] = useState<TurnDirection>(null);
 
   function toggleLowbeam() {
     setLowbeamOn((current) => {
@@ -352,6 +488,26 @@ export function TruckShowroom() {
       const next = !current;
       if (next) {
         setLowbeamOn(false);
+      }
+      return next;
+    });
+  }
+
+  function toggleBrake() {
+    setBrakeOn((current) => {
+      const next = !current;
+      if (next) {
+        setTurnDirection(null);
+      }
+      return next;
+    });
+  }
+
+  function toggleTurn(direction: Exclude<TurnDirection, null>) {
+    setTurnDirection((current) => {
+      const next = current === direction ? null : direction;
+      if (next) {
+        setBrakeOn(false);
       }
       return next;
     });
@@ -388,7 +544,12 @@ export function TruckShowroom() {
 
         <Suspense fallback={<Loader />}>
           <Environment preset="city" />
-          <TruckModel highbeamOn={highbeamOn} lowbeamOn={lowbeamOn} />
+          <TruckModel
+            brakeOn={brakeOn}
+            highbeamOn={highbeamOn}
+            lowbeamOn={lowbeamOn}
+            turnDirection={turnDirection}
+          />
           <ContactShadows
             position={[0, 0.01, 0]}
             opacity={0.32}
@@ -420,7 +581,40 @@ export function TruckShowroom() {
       </Canvas>
 
       <div className="absolute left-4 top-4 z-10 flex items-center gap-3 rounded-2xl border border-white/10 bg-[#0b1020]/74 px-4 py-3 text-white backdrop-blur">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={toggleBrake}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              brakeOn
+                ? "bg-[#ff4e46] text-white shadow-[0_10px_24px_rgba(255,78,70,0.3)]"
+                : "bg-white/14 text-white"
+            }`}
+          >
+            Brake {brakeOn ? "On" : "Off"}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleTurn("left")}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              turnDirection === "left"
+                ? "bg-[#ffb000] text-[#111726] shadow-[0_10px_24px_rgba(255,176,0,0.26)]"
+                : "bg-white/14 text-white"
+            }`}
+          >
+            Turn Left {turnDirection === "left" ? "On" : "Off"}
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleTurn("right")}
+            className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              turnDirection === "right"
+                ? "bg-[#ffb000] text-[#111726] shadow-[0_10px_24px_rgba(255,176,0,0.26)]"
+                : "bg-white/14 text-white"
+            }`}
+          >
+            Turn Right {turnDirection === "right" ? "On" : "Off"}
+          </button>
           <button
             type="button"
             onClick={toggleLowbeam}
@@ -445,12 +639,12 @@ export function TruckShowroom() {
           </button>
         </div>
         <p className="max-w-[14rem] text-xs leading-5 text-white/72">
-          Toggle the lowbeam or highbeam and inspect how each pattern hits the road.
+          Compare headlights up front, then test rear brake lights and blinking turn signals.
         </p>
       </div>
 
       <div className="scene-caption">
-        Rotate, pan, zoom, and compare lowbeam versus highbeam from any angle.
+        Rotate, pan, zoom, and inspect both front and rear lighting behavior.
       </div>
     </div>
   );
