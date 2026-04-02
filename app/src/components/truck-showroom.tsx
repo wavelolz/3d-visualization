@@ -58,7 +58,7 @@ const HIGHBEAM_CONFIG: BeamRigConfig = {
   penumbra: 0.28,
   visualOpacity: 0.14,
   visualRadii: [0.2, 0.035],
-  yOffset: -0.11,
+  yOffset: 0,
 };
 
 const LOWBEAM_CONFIG: BeamRigConfig = {
