@@ -474,8 +474,6 @@ export function TruckShowroom() {
   const [controls, setControls] = useState<VehicleControlState>(
     DEFAULT_VEHICLE_CONTROL_STATE,
   );
-  const [requestError, setRequestError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -497,19 +495,10 @@ export function TruckShowroom() {
 
         startTransition(() => {
           setControls(nextState);
-          setRequestError(null);
         });
-      } catch (error) {
+      } catch {
         if (cancelled) {
           return;
-        }
-
-        setRequestError(
-          error instanceof Error ? error.message : "Failed to sync controls.",
-        );
-      } finally {
-        if (!cancelled) {
-          setSyncing(false);
         }
       }
     }
@@ -527,8 +516,6 @@ export function TruckShowroom() {
     path: string,
     payload: { direction?: TurnDirection; on?: boolean },
   ) {
-    setRequestError(null);
-
     try {
       const response = await fetch(path, {
         method: "POST",
@@ -546,10 +533,7 @@ export function TruckShowroom() {
       startTransition(() => {
         setControls(nextState);
       });
-    } catch (error) {
-      setRequestError(
-        error instanceof Error ? error.message : "Failed to update controls.",
-      );
+    } catch {
     }
   }
 
@@ -689,10 +673,6 @@ export function TruckShowroom() {
           >
             Highbeam {controls.highbeamOn ? "On" : "Off"}
           </button>
-        </div>
-        <div className="max-w-[15rem] text-xs leading-5 text-white/72">
-          <p>Controls now post to the API and the scene stays in sync by polling shared state.</p>
-          <p>{syncing ? "Syncing control state..." : requestError ?? "API control link is active."}</p>
         </div>
       </div>
 
